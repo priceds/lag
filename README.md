@@ -20,36 +20,26 @@
 
 </div>
 
-This is the .NET 10 edition of `lag`, rendered with
-[Spectre.Console](https://spectreconsole.net/). It goes beyond bandwidth to
-measure the network qualities people actually feel: latency, jitter, request
-loss, DNS delay, upload/download capacity, and responsiveness under load.
+Most speed tests answer one question: **how much data can this connection
+move?** `lag` answers the question people actually ask: **why does it feel
+slow?**
 
-While testing, Spectre.Console presents an animated multi-stage status display.
-The completed report uses a rich metric table, quality chart, diagnosis panel,
-and actionable recommendations.
+It measures latency, jitter, failed HTTPS probes, DNS delay, download and
+upload capacity, and responsiveness while the connection is busy. The result
+is a plain-language diagnosis with likely symptoms and practical next steps.
 
-```text
-╔═ lag telemetry ══════════════════════════════════════════════════════════════╗
-║  ◢ NETWORK FLIGHT DECK ◣                                                     ║
-║                                                                              ║
-║  DEVICE ◉ ━━━━━━━━━●━━━━━━━━━━━━━━━━━━━━━━━━━ ◆ ROUTER ━━━━━━ ⬡ EDGE         ║
-║            ▁▂▄▆██▇▅▃▂▁▂▄▆▇▆▄▂▁▂▃▅▇█▇▅▃▂▁▂▃▅▆▇▆▄▂▁▂▃▅▇█▇▅▃▂                  ║
-║            LIVE PROBE PULSE                                                  ║
-║                                                                              ║
-║  ◆ LINK  ◆ ROUTE  ◈ RESPONSE  ◇ LOAD  ◇ RETURN  ◇ ANALYZE                    ║
-║                                                                              ║
-║   LATENCY 57 ms    JITTER 4 ms    LOSS 0.0%    DOWNLOAD 86.5 Mbps            ║
-║   UPLOAD —          UNDER LOAD —             PROBE 8/12                       ║
-║                                                                              ║
-║   TESTING RESPONSIVENESS   latency · jitter · stability    T+ 00:02.4        ║
-║  Local analysis · generated test traffic · no report upload                  ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-```
+| Signal | What it reveals |
+| --- | --- |
+| Latency | The delay you feel in calls, games, and interactive apps |
+| Jitter | Why audio or video can become uneven even on a fast connection |
+| HTTPS probe loss | Failed real-world requests, without relying on ICMP |
+| DNS | Delay before a site or service can begin connecting |
+| Download / upload | Available transfer capacity in both directions |
+| Loaded latency | Whether the connection stays responsive while busy |
 
-## Network Flight Deck
+## Live test
 
-The waiting screen is a live terminal instrument rather than a generic spinner:
+The dashboard makes the test observable while it runs:
 
 - A bidirectional packet travels from **Device → Router → Internet Edge**
 - A continuously evolving probe waveform visualizes test activity
@@ -60,7 +50,7 @@ The waiting screen is a live terminal instrument rather than a generic spinner:
 - Six telemetry stages transition from pending to active to complete
 - The active measurement and protocol layer are always visible
 - A mission timer shows elapsed test time
-- Spectre.Console redraws the dashboard in place and clears it before results
+- The dashboard clears before a compact, glanceable results report
 
 Packet motion and the waveform are decorative but stage-accurate. Every number
 in the counter grid comes from an actual completed probe or transferred byte;
@@ -71,11 +61,52 @@ the final report uses the stabilized measurements.
 > Why do calls break up, games lag, or websites pause when my speed looks fine?
 
 `lag` translates measurements into symptoms and suggests what to try first. It
-does not change network settings.
+does not change network settings, claim to replace laboratory-grade network
+analysis, or reduce connection quality to bandwidth alone.
+
+## Why another speed test?
+
+Two connections can report the same Mbps and feel completely different.
+Bandwidth alone does not expose unstable delay, slow name resolution, failed
+requests, or a router that becomes unresponsive whenever somebody starts an
+upload. `lag` tests those conditions together and explains the result without
+requiring networking expertise.
+
+## Install
+
+Prebuilt, self-contained releases do not require the .NET SDK.
+
+### Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/priceds/lag/main/install.sh | sh
+```
+
+### macOS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/priceds/lag/main/install.sh | sh
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/priceds/lag/main/install.ps1 | iex
+```
+
+Installers select the correct x64 or Arm64 build and install for the current
+user. Set `LAG_INSTALL_DIR` to choose another location. You can also download
+an archive directly from [GitHub Releases](https://github.com/priceds/lag/releases).
 
 ## Run
 
-Requires the .NET 10 SDK:
+After installation:
+
+```bash
+lag
+```
+
+Run from source with the .NET 10 SDK:
 
 ```bash
 dotnet run --project src/Lag
@@ -139,6 +170,20 @@ request.
 
 Probe loss means failed HTTPS probes; it is deliberately not presented as raw
 ICMP packet loss.
+
+## Methodology and limitations
+
+- Results describe the connection from this device at this moment; Wi-Fi,
+  VPNs, background traffic, power saving, and endpoint distance can all affect
+  them.
+- Loaded latency is measured while `lag` generates transfer traffic. It is a
+  practical bufferbloat signal, not a controlled laboratory benchmark.
+- HTTPS probe failures are reported as probe loss and must not be interpreted
+  as router-level ICMP packet loss.
+- A single run is a snapshot. Compare repeated tests—idle and under normal
+  household load—before drawing conclusions.
+- Cloudflare provides the measurement endpoints but does not sponsor or
+  endorse this project.
 
 ## Build
 
