@@ -8,7 +8,7 @@
     <InvariantGlobalization>false</InvariantGlobalization>
     <AssemblyName>lag</AssemblyName>
     <RootNamespace>Lag</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Description>Diagnose latency, jitter, stability, DNS, throughput, and bufferbloat from the terminal.</Description>
     <RepositoryUrl>https://github.com/priceds/lag</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

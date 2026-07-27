@@ -41,13 +41,13 @@ is a plain-language diagnosis with likely symptoms and practical next steps.
 
 The dashboard makes the test observable while it runs:
 
-- A bidirectional packet travels from **Device → Router → Internet Edge**
-- A continuously evolving probe waveform visualizes test activity
-- Six live counters stream real latency, jitter, loss, download, upload, and
+- A packet follows the active test path from **Device → Internet Edge**
+- A continuously evolving oscilloscope waveform visualizes probe timing
+- Live counters stream real latency, jitter, loss, download, upload, and
   loaded-latency measurements
 - Sample counts and direction-specific transferred bytes update during testing
-- Full 24-bit color gradients animate across the topology and waveform
-- Six telemetry stages transition from pending to active to complete
+- Purposeful 24-bit colors identify test state and signal quality
+- Telemetry stages transition from pending to active to complete
 - The active measurement and protocol layer are always visible
 - A mission timer shows elapsed test time
 - The dashboard clears before a compact, glanceable results report
@@ -118,6 +118,14 @@ Quick test without throughput transfer:
 dotnet run --project src/Lag -- --quick
 ```
 
+Operations diagnostics:
+
+```bash
+lag --netops
+lag --quick --netops
+lag --netops --json > lag-netops.json
+```
+
 Machine-readable output:
 
 ```bash
@@ -129,10 +137,75 @@ dotnet run --project src/Lag -- --json
 | Option | Purpose |
 | --- | --- |
 | `--quick` | Skip throughput and loaded-latency transfer tests |
+| `--netops` | Add gateway, interface, IPv4/IPv6, connection-timing, endpoint, Wi-Fi, MTU, TCP, and route diagnostics |
 | `--json` | Emit stable machine-readable JSON without animation |
 | `--no-color` | Disable color while retaining structured presentation |
 | `--force-color` | Force true color in capable terminals that cannot advertise it |
 | `--version` | Print application and framework version |
+
+## NetOps mode
+
+`lag --netops` turns the end-user quality test into a bounded first-response
+snapshot for help desks, network engineers, SREs, and operations teams. It
+keeps the normal experience score and adds enough context to separate a local
+link problem from DNS, dual-stack, path, TLS, or upstream service trouble.
+
+```bash
+# Full quality test plus the operations report
+lag --netops
+
+# Low-impact triage: no download/upload or loaded-latency transfer
+lag --quick --netops
+
+# Capture structured evidence for a ticket or repeated comparison
+lag --netops --json > lag-netops.json
+```
+
+In PowerShell, the same capture is:
+
+```powershell
+lag --netops --json | Set-Content -Encoding utf8 lag-netops.json
+```
+
+Quick mode is useful on a production host or constrained link, but its
+throughput fields are intentionally shown as unavailable. Run the full mode
+when bandwidth and responsiveness under load matter.
+
+### How to read the report
+
+| Finding | What it usually narrows down |
+| --- | --- |
+| Gateway RTT is already high or unstable | Local Wi-Fi, Ethernet, adapter, switch, or router |
+| Gateway is clean but public latency is high | ISP access link, upstream routing, or congestion |
+| IPv4 works while IPv6 fails (or the reverse) | Dual-stack routing, firewall, or provider configuration |
+| DNS is slow while TCP is fast | Resolver, VPN DNS, filtering, or split-DNS behavior |
+| TCP is slow before TLS begins | Route, firewall, proxy, or connection-establishment delay |
+| TLS is disproportionately slow | Inspection proxy, certificate path, or remote TLS edge |
+| TTFB is slow after a clean TLS setup | Remote service or application response time |
+| Endpoint timings diverge sharply | Destination-specific routing or peering |
+| Weak Wi-Fi signal or low negotiated rate | RF coverage, interference, band, channel, or distance |
+| Interface errors or drops increase | Driver, cable, adapter, congestion, or queue pressure |
+| Path-MTU probe fails | VPN/overlay encapsulation, PMTUD, or filtering |
+
+The **Wi-Fi radio** block is structured into SSID, BSSID, band/channel, signal,
+and negotiated rates when the operating system exposes them. The **connection
+timing** block breaks one request into DNS, TCP, TLS, and time-to-first-byte.
+The **endpoint matrix** helps distinguish a machine-wide problem from a
+destination-specific one.
+
+Useful operator workflows:
+
+1. Run `lag --quick --netops` for low-impact initial triage.
+2. Compare Wi-Fi with Ethernet, or VPN on with VPN off.
+3. Run the full `lag --netops` once transfer testing is acceptable.
+4. Save JSON before and after a change and attach only reviewed output to the
+   incident.
+5. Repeat from another host or network segment to identify the fault boundary.
+
+Hop tracing is best-effort and time-bounded. Windows supplies `tracert`;
+Linux systems need the optional `traceroute` command for hop details, and
+macOS normally includes it. Missing platform tools are reported as unavailable
+instead of failing the quality test.
 
 ## Publish native launchers
 
@@ -170,6 +243,12 @@ request.
 
 Probe loss means failed HTTPS probes; it is deliberately not presented as raw
 ICMP packet loss.
+
+`--netops` additionally inspects local interface configuration and may run
+bounded gateway ping, path-MTU, TCP summary, Wi-Fi radio, and hop-trace probes.
+Its report can contain local IP addresses, gateway and DNS addresses, Wi-Fi
+SSID/BSSID, public endpoint addresses, route hops, and TLS certificate issuer.
+Review JSON output before sharing it outside your organization.
 
 ## Methodology and limitations
 

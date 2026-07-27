@@ -23,7 +23,8 @@ internal sealed class NetworkQualityTester : IDisposable
     public async Task<NetworkReport> RunAsync(
         bool includeBandwidth,
         Action<TestProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool includeNetOps = false)
     {
         progress?.Invoke(new(0, "Inspecting connection", "interface · VPN · proxy"));
         var connection = InspectConnection();
@@ -95,6 +96,11 @@ internal sealed class NetworkQualityTester : IDisposable
         progress?.Invoke(new(5, "Reading the connection", "quality · symptoms · fixes"));
         var report = new NetworkReport { Connection = connection, Metrics = metrics };
         Diagnosis.Apply(report);
+        if (includeNetOps)
+        {
+            progress?.Invoke(new(6, "Tracing fault domains", "gateway · stacks · handshakes · route"));
+            report.NetOps = await NetOpsCollector.CollectAsync(connection, cancellationToken);
+        }
         return report;
     }
 

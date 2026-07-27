@@ -3,10 +3,10 @@ Output docs/lag-demo.gif
 Require ./artifacts/demo/lag
 
 Set Shell "bash"
-Set FontSize 18
+Set FontSize 16
 Set FontFamily "DejaVu Sans Mono"
 Set Width 1100
-Set Height 820
+Set Height 1400
 Set Framerate 12
 Set PlaybackSpeed 1.15
 Set CursorBlink false
@@ -21,5 +21,5 @@ Env COLORTERM "truecolor"
 Type@55ms "./artifacts/demo/lag --force-color"
 Sleep 350ms
 Enter
-Sleep 32s
-Sleep 4s
+Sleep 14s
+Sleep 3s

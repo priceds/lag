@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Xunit;
 
 namespace Lag.Tests;
@@ -78,6 +79,38 @@ public sealed class QualityTests
         Assert.Equal(500_000, telemetry.UploadBytes);
         Assert.Equal(80, telemetry.DownloadMbps);
         Assert.Equal(20, telemetry.UploadMbps);
+    }
+
+    [Fact]
+    public void NetOpsJsonUsesConventionalIpFamilyNames()
+    {
+        var report = ReportWith(new NetworkMetrics());
+        report.NetOps = new NetOpsDiagnostics();
+
+        var json = JsonSerializer.Serialize(report, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+        });
+
+        Assert.Contains("\"ipv4\"", json);
+        Assert.Contains("\"ipv6\"", json);
+        Assert.DoesNotContain("\"i_pv4\"", json);
+    }
+
+    [Fact]
+    public void LinuxWifiOutputBecomesStructuredFields()
+    {
+        var wifi = NetOpsCollector.ParseLinuxWifi(
+            "Connected to 1c:3b:f3:de:de:c0 (on wlp3s0) · " +
+            "SSID: Office_5G · freq: 5745.0 · signal: -48 dBm · " +
+            "rx bitrate: 433.3 MBit/s 80MHz · tx bitrate: 390.0 MBit/s 80MHz");
+
+        Assert.True(wifi.Available);
+        Assert.Equal("Office_5G", wifi.Ssid);
+        Assert.Equal("1c:3b:f3:de:de:c0", wifi.Bssid);
+        Assert.Equal("5 GHz", wifi.Band);
+        Assert.Equal("149", wifi.Channel);
+        Assert.Equal("-48 dBm", wifi.Signal);
     }
 
     private static NetworkReport ReportWith(NetworkMetrics metrics) =>
