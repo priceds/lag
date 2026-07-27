@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚡ lag · .NET
+# ⚡ lag
 
 ### Your internet is fast. So why does it feel slow?
 
@@ -11,6 +11,12 @@
 [![License](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
 
 **A cinematic, private network-quality test for your terminal.**
+
+</div>
+
+<div align="center">
+
+![lag network flight deck and results](docs/lag-demo.gif)
 
 </div>
 
@@ -86,6 +92,7 @@ dotnet run --project src/Lag -- --json
 | `--quick` | Skip throughput and loaded-latency transfer tests |
 | `--json` | Emit stable machine-readable JSON without animation |
 | `--no-color` | Disable color while retaining structured presentation |
+| `--force-color` | Force true color in capable terminals that cannot advertise it |
 | `--version` | Print application and framework version |
 
 ## Publish native launchers

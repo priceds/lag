@@ -9,9 +9,10 @@ internal static class Program
         var json = args.Contains("--json");
         var quick = args.Contains("--quick");
         var noColor = args.Contains("--no-color");
+        var forceColor = args.Contains("--force-color");
         var version = args.Contains("--version");
         var help = args.Contains("--help") || args.Contains("-h");
-        var known = new HashSet<string> { "--json", "--quick", "--no-color", "--version", "--help", "-h" };
+        var known = new HashSet<string> { "--json", "--quick", "--no-color", "--force-color", "--version", "--help", "-h" };
 
         if (args.Any(argument => !known.Contains(argument)))
         {
@@ -21,7 +22,7 @@ internal static class Program
         if (help)
         {
             Console.WriteLine("lag — explain why the internet feels slow");
-            Console.WriteLine("\nUsage: lag [--quick] [--json] [--no-color] [--version]");
+            Console.WriteLine("\nUsage: lag [--quick] [--json] [--no-color] [--force-color] [--version]");
             return 0;
         }
         if (version)
@@ -31,6 +32,8 @@ internal static class Program
         }
         if (noColor)
             AnsiConsole.Profile.Capabilities.ColorSystem = ColorSystem.NoColors;
+        else if (forceColor)
+            AnsiConsole.Profile.Capabilities.ColorSystem = ColorSystem.TrueColor;
 
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(35));
         using var tester = new NetworkQualityTester();
