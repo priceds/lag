@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/Lag/Lag.csproj" />
+  <Project Path="tests/Lag.Tests/Lag.Tests.csproj" />
+</Solution>
