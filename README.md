@@ -39,6 +39,9 @@ and actionable recommendations.
 ║                                                                              ║
 ║  ◆ LINK  ◆ ROUTE  ◈ RESPONSE  ◇ LOAD  ◇ RETURN  ◇ ANALYZE                    ║
 ║                                                                              ║
+║   LATENCY 57 ms    JITTER 4 ms    LOSS 0.0%    DOWNLOAD 86.5 Mbps            ║
+║   UPLOAD —          UNDER LOAD —             PROBE 8/12                       ║
+║                                                                              ║
 ║   TESTING RESPONSIVENESS   latency · jitter · stability    T+ 00:02.4        ║
 ║  Local analysis · generated test traffic · no report upload                  ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -50,13 +53,18 @@ The waiting screen is a live terminal instrument rather than a generic spinner:
 
 - A bidirectional packet travels from **Device → Router → Internet Edge**
 - A continuously evolving probe waveform visualizes test activity
+- Six live counters stream real latency, jitter, loss, download, upload, and
+  loaded-latency measurements
+- Sample counts and direction-specific transferred bytes update during testing
+- Full 24-bit color gradients animate across the topology and waveform
 - Six telemetry stages transition from pending to active to complete
 - The active measurement and protocol layer are always visible
 - A mission timer shows elapsed test time
 - Spectre.Console redraws the dashboard in place and clears it before results
 
-The animation is decorative but stage-accurate: it never invents intermediate
-network measurements. Only completed measurements appear in the final report.
+Packet motion and the waveform are decorative but stage-accurate. Every number
+in the counter grid comes from an actual completed probe or transferred byte;
+the final report uses the stabilized measurements.
 
 ## What it answers
 

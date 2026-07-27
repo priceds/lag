@@ -33,7 +33,19 @@ internal sealed class NetworkQualityTester : IDisposable
         await MeasureLatencyAsync(1, TimeSpan.Zero, cancellationToken);
 
         progress?.Invoke(new(2, "Testing responsiveness", "latency · jitter · stability"));
-        var latencyTask = MeasureLatencyAsync(12, TimeSpan.FromMilliseconds(90), cancellationToken);
+        var latencyTask = MeasureLatencyAsync(
+            12,
+            TimeSpan.FromMilliseconds(90),
+            cancellationToken,
+            snapshot => progress?.Invoke(new(
+                2,
+                "Testing responsiveness",
+                $"probe {snapshot.Completed}/12",
+                new(
+                    LatencyMs: Statistics.Median(snapshot.Samples),
+                    JitterMs: Statistics.Jitter(snapshot.Samples),
+                    ProbeLossPercent: snapshot.Failures / (double)snapshot.Completed * 100,
+                    SamplesCompleted: snapshot.Completed))));
         var dnsTask = MeasureDnsAsync(cancellationToken);
         var latency = await latencyTask;
         metrics.DnsMs = await dnsTask;
@@ -45,8 +57,24 @@ internal sealed class NetworkQualityTester : IDisposable
         if (includeBandwidth && metrics.Reachable)
         {
             progress?.Invoke(new(3, "Putting the link under load", "download · loaded latency"));
-            var downloadTask = MeasureDownloadAsync(cancellationToken);
-            var loadedTask = MeasureLatencyAsync(10, TimeSpan.FromMilliseconds(250), cancellationToken);
+            var downloadTask = MeasureDownloadAsync(
+                cancellationToken,
+                (rate, bytes) => progress?.Invoke(new(
+                    3,
+                    "Putting the link under load",
+                    "download · loaded responsiveness",
+                    new(DownloadMbps: rate, DownloadBytes: bytes))));
+            var loadedTask = MeasureLatencyAsync(
+                10,
+                TimeSpan.FromMilliseconds(250),
+                cancellationToken,
+                snapshot => progress?.Invoke(new(
+                    3,
+                    "Putting the link under load",
+                    $"loaded probe {snapshot.Completed}/10",
+                    new(
+                        LoadedLatencyMs: Statistics.Median(snapshot.Samples),
+                        SamplesCompleted: snapshot.Completed))));
             await Task.WhenAll(downloadTask, loadedTask);
             metrics.DownloadMbps = await downloadTask;
             var loaded = await loadedTask;
@@ -54,7 +82,14 @@ internal sealed class NetworkQualityTester : IDisposable
             metrics.BufferbloatMs = Math.Max(0, metrics.LoadedLatencyMs - metrics.LatencyMs);
 
             progress?.Invoke(new(4, "Testing the return path", "upload throughput"));
-            metrics.UploadMbps = await MeasureUploadAsync(2_000_000, cancellationToken);
+            metrics.UploadMbps = await MeasureUploadAsync(
+                2_000_000,
+                cancellationToken,
+                (rate, bytes) => progress?.Invoke(new(
+                    4,
+                    "Testing the return path",
+                    "upload throughput",
+                    new(UploadMbps: rate, UploadBytes: bytes))));
         }
 
         progress?.Invoke(new(5, "Reading the connection", "quality · symptoms · fixes"));
@@ -66,7 +101,8 @@ internal sealed class NetworkQualityTester : IDisposable
     private async Task<(List<double> Samples, int Failures)> MeasureLatencyAsync(
         int count,
         TimeSpan spacing,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<LatencySnapshot>? progress = null)
     {
         var samples = new List<double>(count);
         var failures = 0;
@@ -94,6 +130,7 @@ internal sealed class NetworkQualityTester : IDisposable
             {
                 failures++;
             }
+            progress?.Invoke(new(samples.ToArray(), failures, i + 1));
 
             if (i + 1 < count && spacing > TimeSpan.Zero)
                 await Task.Delay(spacing, cancellationToken);
@@ -118,16 +155,21 @@ internal sealed class NetworkQualityTester : IDisposable
         return Statistics.Median(samples);
     }
 
-    private async Task<double> MeasureDownloadAsync(CancellationToken cancellationToken)
+    private async Task<double> MeasureDownloadAsync(
+        CancellationToken cancellationToken,
+        Action<double, long>? progress)
     {
-        var first = await MeasureDownloadOnceAsync(1_000_000, cancellationToken);
+        var first = await MeasureDownloadOnceAsync(1_000_000, cancellationToken, progress);
         if (first is <= 0 or < 10)
             return first;
-        var second = await MeasureDownloadOnceAsync(8_000_000, cancellationToken);
+        var second = await MeasureDownloadOnceAsync(8_000_000, cancellationToken, progress);
         return second > 0 ? second : first;
     }
 
-    private async Task<double> MeasureDownloadOnceAsync(int bytes, CancellationToken cancellationToken)
+    private async Task<double> MeasureDownloadOnceAsync(
+        int bytes,
+        CancellationToken cancellationToken,
+        Action<double, long>? progress)
     {
         try
         {
@@ -141,30 +183,53 @@ internal sealed class NetworkQualityTester : IDisposable
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             var buffer = new byte[64 * 1024];
             long received = 0;
+            var lastUpdate = TimeSpan.Zero;
             int read;
             while ((read = await stream.ReadAsync(buffer, cancellationToken)) > 0)
+            {
                 received += read;
+                if (watch.Elapsed - lastUpdate >= TimeSpan.FromMilliseconds(80))
+                {
+                    progress?.Invoke(
+                        received * 8d / watch.Elapsed.TotalSeconds / 1_000_000d,
+                        received);
+                    lastUpdate = watch.Elapsed;
+                }
+            }
             watch.Stop();
-            return received * 8d / watch.Elapsed.TotalSeconds / 1_000_000d;
+            var rate = received * 8d / watch.Elapsed.TotalSeconds / 1_000_000d;
+            progress?.Invoke(rate, received);
+            return rate;
         }
         catch (HttpRequestException) { return 0; }
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested) { return 0; }
     }
 
-    private async Task<double> MeasureUploadAsync(int bytes, CancellationToken cancellationToken)
+    private async Task<double> MeasureUploadAsync(
+        int bytes,
+        CancellationToken cancellationToken,
+        Action<double, long>? progress)
     {
         try
         {
             var payload = new byte[bytes];
             Random.Shared.NextBytes(payload.AsSpan(0, 32));
-            using var content = new ByteArrayContent(payload);
-            content.Headers.ContentType = new("application/octet-stream");
             var watch = Stopwatch.StartNew();
+            var lastUpdate = TimeSpan.Zero;
+            using var content = new ProgressUploadContent(payload, sent =>
+            {
+                if (watch.Elapsed - lastUpdate < TimeSpan.FromMilliseconds(80) && sent < bytes)
+                    return;
+                progress?.Invoke(sent * 8d / watch.Elapsed.TotalSeconds / 1_000_000d, sent);
+                lastUpdate = watch.Elapsed;
+            });
             using var response = await _client.PostAsync(UploadEndpoint, content, cancellationToken);
             watch.Stop();
-            return response.IsSuccessStatusCode
+            var rate = response.IsSuccessStatusCode
                 ? bytes * 8d / watch.Elapsed.TotalSeconds / 1_000_000d
                 : 0;
+            progress?.Invoke(rate, bytes);
+            return rate;
         }
         catch (HttpRequestException) { return 0; }
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested) { return 0; }
@@ -218,6 +283,37 @@ internal sealed class NetworkQualityTester : IDisposable
     }
 
     public void Dispose() => _client.Dispose();
+}
+
+internal sealed record LatencySnapshot(
+    IReadOnlyList<double> Samples,
+    int Failures,
+    int Completed);
+
+internal sealed class ProgressUploadContent(
+    byte[] payload,
+    Action<long> progress) : HttpContent
+{
+    protected override bool TryComputeLength(out long length)
+    {
+        length = payload.LongLength;
+        return true;
+    }
+
+    protected override async Task SerializeToStreamAsync(
+        Stream stream,
+        TransportContext? context)
+    {
+        const int chunkSize = 64 * 1024;
+        long sent = 0;
+        while (sent < payload.LongLength)
+        {
+            var count = (int)Math.Min(chunkSize, payload.LongLength - sent);
+            await stream.WriteAsync(payload.AsMemory((int)sent, count));
+            sent += count;
+            progress(sent);
+        }
+    }
 }
 
 internal static class Statistics

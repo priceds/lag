@@ -68,6 +68,18 @@ public sealed class QualityTests
         Assert.Equal(0, report.Score);
     }
 
+    [Fact]
+    public void LiveTelemetryKeepsTransferDirectionsIndependent()
+    {
+        var telemetry = new LiveTelemetry(DownloadMbps: 80, DownloadBytes: 8_000_000)
+            .Merge(new LiveTelemetry(UploadMbps: 20, UploadBytes: 500_000));
+
+        Assert.Equal(8_000_000, telemetry.DownloadBytes);
+        Assert.Equal(500_000, telemetry.UploadBytes);
+        Assert.Equal(80, telemetry.DownloadMbps);
+        Assert.Equal(20, telemetry.UploadMbps);
+    }
+
     private static NetworkReport ReportWith(NetworkMetrics metrics) =>
         new() { Connection = new ConnectionInfo(), Metrics = metrics };
 }

@@ -13,9 +13,10 @@ internal static class SpectreRenderer
         var updates = Channel.CreateUnbounded<TestProgress>(new UnboundedChannelOptions
         {
             SingleReader = true,
-            SingleWriter = true
+            SingleWriter = false
         });
         var latest = new TestProgress(0, "Powering the instruments", "preparing network probes");
+        var telemetry = new LiveTelemetry();
         var started = Stopwatch.StartNew();
         var frame = 0;
         var testTask = Task.Run(async () =>
@@ -33,7 +34,7 @@ internal static class SpectreRenderer
             }
         }, cancellationToken);
 
-        await AnsiConsole.Live(BuildFlightDeck(latest, frame, started.Elapsed, includeBandwidth))
+        await AnsiConsole.Live(BuildFlightDeck(latest, telemetry, frame, started.Elapsed, includeBandwidth))
             .AutoClear(true)
             .Overflow(VerticalOverflow.Crop)
             .Cropping(VerticalOverflowCropping.Top)
@@ -42,15 +43,23 @@ internal static class SpectreRenderer
                 while (!testTask.IsCompleted)
                 {
                     while (updates.Reader.TryRead(out var update))
+                    {
                         latest = update;
-                    context.UpdateTarget(BuildFlightDeck(latest, frame++, started.Elapsed, includeBandwidth));
+                        telemetry = telemetry.Merge(update.Telemetry);
+                    }
+                    context.UpdateTarget(BuildFlightDeck(latest, telemetry, frame++, started.Elapsed, includeBandwidth));
                     await Task.Delay(80, cancellationToken);
                 }
             });
         return await testTask;
     }
 
-    private static IRenderable BuildFlightDeck(TestProgress progress, int frame, TimeSpan elapsed, bool includeBandwidth)
+    private static IRenderable BuildFlightDeck(
+        TestProgress progress,
+        LiveTelemetry telemetry,
+        int frame,
+        TimeSpan elapsed,
+        bool includeBandwidth)
     {
         var routeWidth = 35;
         var cycle = (routeWidth - 1) * 2;
@@ -59,10 +68,10 @@ internal static class SpectreRenderer
         var route = new char[routeWidth];
         Array.Fill(route, '━');
         route[packet] = '●';
-        var routeText = new string(route);
-        var packetColor = rawPosition < routeWidth ? "deepskyblue1" : "springgreen2";
+        var routeText = GradientText(new string(route), frame * 5);
+        var packetColor = rawPosition < routeWidth ? "#22d3ee" : "#4ade80";
 
-        var waveform = BuildWaveform(frame, 49);
+        var waveform = GradientText(BuildWaveform(frame, 49), frame * 9 + 80);
         var stages = includeBandwidth
             ? new[] { "LINK", "ROUTE", "RESPONSE", "LOAD", "RETURN", "ANALYZE" }
             : new[] { "LINK", "ROUTE", "RESPONSE", "ANALYZE" };
@@ -75,24 +84,27 @@ internal static class SpectreRenderer
         }));
 
         var topology =
-            $"[bold white]DEVICE[/] [deepskyblue1]◉[/] [{packetColor}]{routeText}[/] " +
-            "[mediumpurple2]◆[/] [bold white]ROUTER[/] [grey35]━━━━━━[/] " +
-            "[springgreen2]⬡[/] [bold white]EDGE[/]";
+            $"[bold #f8fafc]DEVICE[/] [#22d3ee]◉[/] {routeText} " +
+            $"[{packetColor}]◆[/] [bold #f8fafc]ROUTER[/] [#475569]━━━━━━[/] " +
+            "[#4ade80]⬡[/] [bold #f8fafc]EDGE[/]";
         var phase = $"[black on deepskyblue1] {Markup.Escape(progress.Phase.ToUpperInvariant())} [/]  " +
                     $"[grey]{Markup.Escape(progress.Detail)}[/]";
         var timer = $"[grey53]T+ {elapsed:mm\\:ss\\.f}[/]";
 
+        var counters = BuildLiveCounters(telemetry, frame);
         var rows = new Rows(
-            new Markup("[bold deepskyblue1]◢ NETWORK FLIGHT DECK ◣[/]"),
+            new Markup(GradientText("◢ NETWORK FLIGHT DECK ◣", frame * 7)),
             new Text(""),
             new Markup(topology),
-            new Markup($"[grey35]            {waveform}[/]"),
-            new Markup("[grey35]            LIVE PROBE PULSE[/]"),
+            new Markup($"            {waveform}"),
+            new Markup("[#64748b]            LIVE PROBE PULSE · TRUE-COLOR TELEMETRY[/]"),
             new Text(""),
             new Markup(stageLine),
             new Text(""),
+            counters,
+            new Text(""),
             new Markup($"{phase}    {timer}"),
-            new Markup("[grey35]Local analysis · generated test traffic · no report upload[/]")
+            new Markup("[#64748b]Local analysis · generated test traffic · no report upload[/]")
         );
         return new Panel(rows)
             .Header("[bold deepskyblue1] lag telemetry [/]")
@@ -101,6 +113,82 @@ internal static class SpectreRenderer
             .Padding(2, 1)
             .Expand();
     }
+
+    private static Grid BuildLiveCounters(LiveTelemetry telemetry, int frame)
+    {
+        var grid = new Grid().Expand();
+        grid.AddColumn();
+        grid.AddColumn();
+        grid.AddColumn();
+        grid.AddRow(
+            Counter("LATENCY", FormatMs(telemetry.LatencyMs), "#38bdf8", $"probe #{telemetry.SamplesCompleted ?? 0}"),
+            Counter("JITTER", FormatMs(telemetry.JitterMs), "#a78bfa", "variation"),
+            Counter("PROBE LOSS", FormatPercent(telemetry.ProbeLossPercent), "#facc15", "HTTPS stability"));
+        grid.AddRow(
+            Counter("DOWNLOAD", FormatRate(telemetry.DownloadMbps), "#22d3ee", FormatBytes(telemetry.DownloadBytes)),
+            Counter("UPLOAD", FormatRate(telemetry.UploadMbps), "#4ade80", FormatBytes(telemetry.UploadBytes)),
+            Counter("UNDER LOAD", FormatMs(telemetry.LoadedLatencyMs), PulseColor(frame), "responsiveness"));
+        return grid;
+    }
+
+    private static Panel Counter(string name, string value, string color, string footer)
+    {
+        var content = new Rows(
+            new Align(new Markup($"[bold {color}]{Markup.Escape(value)}[/]"), HorizontalAlignment.Center),
+            new Align(new Markup($"[#64748b]{Markup.Escape(footer)}[/]"), HorizontalAlignment.Center));
+        return new Panel(content)
+            .Header($"[bold #cbd5e1] {name} [/]")
+            .Border(BoxBorder.Rounded)
+            .BorderColor(Color.FromHex(color))
+            .Padding(1, 0);
+    }
+
+    private static string GradientText(string text, int phase)
+    {
+        var output = new System.Text.StringBuilder(text.Length * 22);
+        for (var index = 0; index < text.Length; index++)
+        {
+            var hue = (phase + index * 7) % 360;
+            var color = HsvToRgb(hue, .78, .96);
+            output.Append($"[#{color.R:X2}{color.G:X2}{color.B:X2}]{Markup.Escape(text[index].ToString())}[/]");
+        }
+        return output.ToString();
+    }
+
+    private static (byte R, byte G, byte B) HsvToRgb(double hue, double saturation, double value)
+    {
+        var chroma = value * saturation;
+        var x = chroma * (1 - Math.Abs(hue / 60 % 2 - 1));
+        var match = value - chroma;
+        var (red, green, blue) = hue switch
+        {
+            < 60 => (chroma, x, 0d),
+            < 120 => (x, chroma, 0d),
+            < 180 => (0d, chroma, x),
+            < 240 => (0d, x, chroma),
+            < 300 => (x, 0d, chroma),
+            _ => (chroma, 0d, x)
+        };
+        return ((byte)((red + match) * 255), (byte)((green + match) * 255), (byte)((blue + match) * 255));
+    }
+
+    private static string PulseColor(int frame)
+    {
+        var strength = (Math.Sin(frame * .18) + 1) / 2;
+        var red = (byte)(56 + strength * 80);
+        var green = (byte)(189 + strength * 40);
+        return $"#{red:X2}{green:X2}F8";
+    }
+
+    private static string FormatMs(double? value) => value is null ? "—" : $"{value:0} ms";
+    private static string FormatRate(double? value) => value is null ? "—" : $"{value:0.0} Mbps";
+    private static string FormatPercent(double? value) => value is null ? "—" : $"{value:0.0}%";
+    private static string FormatBytes(long? value) => value switch
+    {
+        null => "waiting",
+        < 1_000_000 => $"{value / 1_000d:0} KB transferred",
+        _ => $"{value / 1_000_000d:0.0} MB transferred"
+    };
 
     private static string BuildWaveform(int frame, int width)
     {
@@ -122,31 +210,45 @@ internal static class SpectreRenderer
         AnsiConsole.Write(new FigletText("lag").Color(Color.DeepSkyBlue1));
         AnsiConsole.MarkupLine("[grey]Your internet is fast. So why does it feel slow?[/]\n");
 
-        var metrics = new Table()
-            .Border(TableBorder.Rounded)
-            .BorderColor(Color.Grey35)
-            .AddColumn(new TableColumn("[bold]Signal[/]").Centered())
-            .AddColumn(new TableColumn("[bold]Measurement[/]"))
-            .AddColumn(new TableColumn("[bold]Result[/]").RightAligned())
-            .AddColumn(new TableColumn("[bold]What it means[/]"));
-
-        AddMetric(metrics, report.Metrics.Reachable, "Connected",
-            $"{report.Connection.Type} · {report.Connection.Interface ?? "active interface"}", "Public endpoint reachable");
+        var cards = new List<IRenderable>
+        {
+            ResultCard(report.Metrics.Reachable, "CONNECTION",
+                $"{report.Connection.Type}\n[#94a3b8]{Markup.Escape(report.Connection.Interface ?? "active interface")}[/]",
+                "Public edge reachable", "#22d3ee")
+        };
         if (report.Metrics.Reachable)
         {
-            AddMetric(metrics, report.Metrics.LatencyMs <= 80, "Latency", $"{report.Metrics.LatencyMs:0} ms", "Interaction delay");
-            AddMetric(metrics, report.Metrics.JitterMs <= 25, "Jitter", $"{report.Metrics.JitterMs:0} ms", "Moment-to-moment variation");
-            AddMetric(metrics, report.Metrics.ProbeLossPercent < 1, "Stability", $"{report.Metrics.ProbeLossPercent:0.0}% loss", "Failed HTTPS probes");
-            AddMetric(metrics, report.Metrics.DnsMs <= 180, "DNS", $"{report.Metrics.DnsMs:0} ms", "Name lookup delay");
+            cards.Add(ResultCard(report.Metrics.LatencyMs <= 80, "LATENCY",
+                $"{report.Metrics.LatencyMs:0} ms", "Interaction delay", "#38bdf8"));
+            cards.Add(ResultCard(report.Metrics.JitterMs <= 25, "JITTER",
+                $"{report.Metrics.JitterMs:0} ms", "Timing variation", "#a78bfa"));
+            cards.Add(ResultCard(report.Metrics.ProbeLossPercent < 1, "STABILITY",
+                $"{report.Metrics.ProbeLossPercent:0.0}% loss", "Failed HTTPS probes", "#facc15"));
+            cards.Add(ResultCard(report.Metrics.DnsMs <= 180, "DNS",
+                $"{report.Metrics.DnsMs:0} ms", "Name lookup delay", "#fb7185"));
             if (report.Metrics.DownloadMbps > 0)
-                AddMetric(metrics, report.Metrics.DownloadMbps >= 25, "Download", $"{report.Metrics.DownloadMbps:0.0} Mbps", "Receiving capacity");
+                cards.Add(ResultCard(report.Metrics.DownloadMbps >= 25, "DOWNLOAD",
+                    $"{report.Metrics.DownloadMbps:0.0} Mbps", "Receiving capacity", "#22d3ee"));
             if (report.Metrics.UploadMbps > 0)
-                AddMetric(metrics, report.Metrics.UploadMbps >= 8, "Upload", $"{report.Metrics.UploadMbps:0.0} Mbps", "Sending capacity");
+                cards.Add(ResultCard(report.Metrics.UploadMbps >= 8, "UPLOAD",
+                    $"{report.Metrics.UploadMbps:0.0} Mbps", "Sending capacity", "#4ade80"));
             if (report.Metrics.LoadedLatencyMs > 0)
-                AddMetric(metrics, report.Metrics.BufferbloatMs <= 80, "Under load",
-                    $"{report.Metrics.LoadedLatencyMs:0} ms  ([grey]+{report.Metrics.BufferbloatMs:0}[/])", "Responsiveness while busy");
+                cards.Add(ResultCard(report.Metrics.BufferbloatMs <= 80, "UNDER LOAD",
+                    $"{report.Metrics.LoadedLatencyMs:0} ms\n[#94a3b8]+{report.Metrics.BufferbloatMs:0} ms[/]",
+                    "Responsiveness while busy", "#2dd4bf"));
         }
-        AnsiConsole.Write(metrics);
+
+        var resultGrid = new Grid().Expand();
+        for (var index = 0; index < 4; index++)
+            resultGrid.AddColumn();
+        for (var index = 0; index < cards.Count; index += 4)
+        {
+            var row = new IRenderable[4];
+            for (var column = 0; column < 4; column++)
+                row[column] = index + column < cards.Count ? cards[index + column] : new Text("");
+            resultGrid.AddRow(row);
+        }
+        AnsiConsole.Write(resultGrid);
 
         var tone = report.Verdict switch
         {
@@ -155,38 +257,65 @@ internal static class SpectreRenderer
             Verdict.Unstable => "yellow",
             _ => "red"
         };
-        AnsiConsole.WriteLine();
-        AnsiConsole.Write(new BreakdownChart()
+        var chart = new BreakdownChart()
             .Width(54)
             .AddItem("Quality", report.Score, Color.DeepSkyBlue1)
-            .AddItem("Headroom", 100 - report.Score, Color.Grey23));
-        AnsiConsole.MarkupLine($"\n  [bold {tone}]{report.Score}/100 · {report.Verdict}[/]");
-
-        var diagnosis = new Panel(Markup.Escape(report.Diagnosis))
-            .Header("[bold] Diagnosis [/]")
+            .AddItem("Headroom", 100 - report.Score, Color.Grey23);
+        var scorePanel = new Panel(new Rows(
+                chart,
+                new Align(new Markup($"[bold {tone}]{report.Score}/100 · {report.Verdict}[/]"), HorizontalAlignment.Center)))
+            .Header("[bold #38bdf8] QUALITY [/]")
             .Border(BoxBorder.Rounded)
             .BorderColor(Color.DeepSkyBlue1)
             .Padding(1, 0);
-        AnsiConsole.Write(diagnosis);
 
-        if (report.LikelySymptoms.Count > 0)
-        {
-            AnsiConsole.Write(new Rule("[yellow]Likely symptoms[/]").LeftJustified());
-            foreach (var symptom in report.LikelySymptoms)
-                AnsiConsole.MarkupLine($"  [yellow]•[/] {Markup.Escape(symptom)}");
-        }
+        var diagnosis = new Panel(Markup.Escape(report.Diagnosis))
+            .Header("[bold #a78bfa] DIAGNOSIS [/]")
+            .Border(BoxBorder.Rounded)
+            .BorderColor(Color.MediumPurple2)
+            .Padding(1, 0);
+        var summary = new Grid().Expand().AddColumn().AddColumn();
+        summary.AddRow(scorePanel, diagnosis);
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(summary);
 
-        AnsiConsole.Write(new Rule("[deepskyblue1]Try first[/]").LeftJustified());
-        foreach (var action in report.TryFirst)
-            AnsiConsole.MarkupLine($"  [deepskyblue1]→[/] {Markup.Escape(action)}");
+        var symptomText = report.LikelySymptoms.Count == 0
+            ? "[#64748b]No obvious user-facing symptoms detected.[/]"
+            : string.Join("\n", report.LikelySymptoms.Select(item => $"[#facc15]•[/] {Markup.Escape(item)}"));
+        var actionText = string.Join("\n", report.TryFirst.Select(item => $"[#22d3ee]→[/] {Markup.Escape(item)}"));
+        var guidance = new Grid().Expand().AddColumn().AddColumn();
+        guidance.AddRow(
+            new Panel(new Markup(symptomText))
+                .Header("[bold #facc15] LIKELY SYMPTOMS [/]")
+                .Border(BoxBorder.Rounded)
+                .BorderColor(Color.Yellow),
+            new Panel(new Markup(actionText))
+                .Header("[bold #22d3ee] TRY FIRST [/]")
+                .Border(BoxBorder.Rounded)
+                .BorderColor(Color.Cyan1));
+        AnsiConsole.Write(guidance);
+
         foreach (var note in report.Notes)
-            AnsiConsole.MarkupLine($"\n  [grey]Note: {Markup.Escape(note)}[/]");
+            AnsiConsole.MarkupLine($"\n  [#64748b]Note: {Markup.Escape(note)}[/]");
         AnsiConsole.WriteLine();
     }
 
-    private static void AddMetric(Table table, bool pass, string name, string value, string meaning)
+    private static Panel ResultCard(
+        bool pass,
+        string name,
+        string value,
+        string meaning,
+        string accent)
     {
-        var indicator = pass ? "[green]✓[/]" : "[yellow]![/]";
-        table.AddRow(indicator, Markup.Escape(name), value, $"[grey]{Markup.Escape(meaning)}[/]");
+        var state = pass ? "[#4ade80]● GOOD[/]" : "[#facc15]▲ CHECK[/]";
+        var content = new Rows(
+            new Align(new Markup($"[bold {accent}]{value}[/]"), HorizontalAlignment.Center),
+            new Align(new Markup($"[#94a3b8]{Markup.Escape(meaning)}[/]"), HorizontalAlignment.Center),
+            new Align(new Markup(state), HorizontalAlignment.Center));
+        return new Panel(content)
+            .Header($"[bold #e2e8f0] {name} [/]")
+            .Border(BoxBorder.Rounded)
+            .BorderColor(Color.FromHex(accent))
+            .Padding(1, 0);
     }
 }

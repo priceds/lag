@@ -9,7 +9,36 @@ internal enum Verdict
     Offline
 }
 
-internal sealed record TestProgress(int Stage, string Phase, string Detail);
+internal sealed record TestProgress(
+    int Stage,
+    string Phase,
+    string Detail,
+    LiveTelemetry? Telemetry = null);
+
+internal sealed record LiveTelemetry(
+    double? LatencyMs = null,
+    double? JitterMs = null,
+    double? ProbeLossPercent = null,
+    double? DownloadMbps = null,
+    double? UploadMbps = null,
+    double? LoadedLatencyMs = null,
+    long? DownloadBytes = null,
+    long? UploadBytes = null,
+    int? SamplesCompleted = null)
+{
+    public LiveTelemetry Merge(LiveTelemetry? update) => update is null
+        ? this
+        : new(
+            update.LatencyMs ?? LatencyMs,
+            update.JitterMs ?? JitterMs,
+            update.ProbeLossPercent ?? ProbeLossPercent,
+            update.DownloadMbps ?? DownloadMbps,
+            update.UploadMbps ?? UploadMbps,
+            update.LoadedLatencyMs ?? LoadedLatencyMs,
+            update.DownloadBytes ?? DownloadBytes,
+            update.UploadBytes ?? UploadBytes,
+            update.SamplesCompleted ?? SamplesCompleted);
+}
 
 internal sealed class NetworkReport
 {
