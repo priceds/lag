@@ -10,7 +10,7 @@
 [![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-06b6d4)](#platforms)
 [![License](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
 
-**A cinematic, private network-quality test for your terminal.**
+**A private network-quality test that explains what speed tests miss.**
 
 </div>
 
@@ -145,7 +145,7 @@ on Linux, macOS, and Windows in GitHub Actions.
 
 ## 💜 Special thanks
 
-The cinematic terminal experience is powered by
+The rich terminal presentation is powered by
 [**Spectre.Console**](https://github.com/spectreconsole/spectre.console), an
 exceptional open-source library for beautiful, cross-platform .NET console
 applications.
