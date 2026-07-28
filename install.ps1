@@ -1,9 +1,34 @@
+param(
+    [switch]$ArchitectureOnly
+)
+
 $ErrorActionPreference = "Stop"
 
-$architecture = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
-    "X64" { "x64" }
-    "Arm64" { "arm64" }
-    default { throw "lag: unsupported architecture: $_" }
+$detectedArchitecture = if ($env:PROCESSOR_ARCHITEW6432) {
+    $env:PROCESSOR_ARCHITEW6432
+} elseif ($env:PROCESSOR_ARCHITECTURE) {
+    $env:PROCESSOR_ARCHITECTURE
+} else {
+    try {
+        [string][System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+    } catch {
+        $null
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($detectedArchitecture)) {
+    throw "lag: unable to detect Windows architecture"
+}
+
+$architecture = switch ($detectedArchitecture.ToUpperInvariant()) {
+    { $_ -in "AMD64", "X64", "X86_64" } { "x64"; break }
+    { $_ -in "ARM64", "AARCH64" } { "arm64"; break }
+    default { throw "lag: unsupported architecture: $detectedArchitecture" }
+}
+
+if ($ArchitectureOnly) {
+    Write-Output $architecture
+    return
 }
 
 $installDir = if ($env:LAG_INSTALL_DIR) {

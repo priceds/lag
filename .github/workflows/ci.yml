@@ -34,3 +34,13 @@ jobs:
 
       - name: Test
         run: dotnet test -c Release --no-build
+
+      - name: Test Windows installer with Windows PowerShell
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./tests/Install.Tests.ps1
+
+      - name: Test Windows installer with PowerShell
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/Install.Tests.ps1
