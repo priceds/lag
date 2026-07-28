@@ -1,10 +1,33 @@
+using System.Text;
 using System.Text.Json;
+using Spectre.Console;
 using Xunit;
 
 namespace Lag.Tests;
 
 public sealed class QualityTests
 {
+    [Fact]
+    public void WindowsConsoleUsesUtf8BeforeRendering()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var originalEncoding = Console.OutputEncoding;
+        try
+        {
+            Console.OutputEncoding = Encoding.Latin1;
+            Program.ConfigureConsoleEncoding();
+
+            Assert.Equal(Encoding.UTF8.CodePage, Console.OutputEncoding.CodePage);
+            Assert.True(AnsiConsole.Profile.Capabilities.Unicode);
+        }
+        finally
+        {
+            Console.OutputEncoding = originalEncoding;
+        }
+    }
+
     [Fact]
     public void MedianHandlesEvenSamples()
     {

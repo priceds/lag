@@ -1,3 +1,4 @@
+using System.Text;
 using Spectre.Console;
 
 namespace Lag;
@@ -6,6 +7,8 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        ConfigureConsoleEncoding();
+
         var json = args.Contains("--json");
         var quick = args.Contains("--quick");
         var noColor = args.Contains("--no-color");
@@ -29,7 +32,7 @@ internal static class Program
         }
         if (version)
         {
-            Console.WriteLine("lag 1.1.0 (.NET 10 · Spectre.Console)");
+            Console.WriteLine("lag 1.1.1 (.NET 10 · Spectre.Console)");
             return 0;
         }
         if (noColor)
@@ -66,6 +69,15 @@ internal static class Program
         {
             Console.Error.WriteLine($"lag: test timed out after {(netops ? 65 : 35)} seconds");
             return 1;
+        }
+    }
+
+    internal static void ConfigureConsoleEncoding()
+    {
+        if (OperatingSystem.IsWindows() &&
+            Console.OutputEncoding.CodePage != Encoding.UTF8.CodePage)
+        {
+            Console.OutputEncoding = Encoding.UTF8;
         }
     }
 }
